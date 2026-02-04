@@ -149,7 +149,7 @@ class LatHdrTranscoderV2Plugin: FlutterPlugin, MethodCallHandler, EventChannel.S
     val editedMediaItem =
       EditedMediaItem.Builder(MediaItem.fromUri(inputUri))
         .setFlattenForSlowMotion(true).build()
-    val editedMediaItemSequence = EditedMediaItemSequence.Builder(editedMediaItem).build()
+    val editedMediaItemSequence = EditedMediaItemSequence(listOf(editedMediaItem))
     val composition = Composition.Builder(editedMediaItemSequence)
       .setHdrMode(toneMap)
       .build()
