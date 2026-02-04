@@ -135,68 +135,83 @@ class LatHdrTranscoderV2Plugin: FlutterPlugin, MethodCallHandler, EventChannel.S
   }
 
   @OptIn(UnstableApi::class) private fun transcoding(path: String,toneMapRequest: Int?, @NonNull result: Result) {
-    val inputUri = uriFromFilePath(path)
-    val outputPath = createOutputPath(path)
-    log("input: $path")
-    log("output: $outputPath")
-    deleteFile(outputPath)
-    var toneMap = hdrToneMap()
-    if (toneMapRequest != null) toneMap = toneMapRequest
-    if (toneMap == -1) {
-      TranscoderErrorType.NotSupportVersion.occurs(result)
-      return
-    }
-    val editedMediaItem =
-      EditedMediaItem.Builder(MediaItem.fromUri(inputUri))
-        .setFlattenForSlowMotion(true).build()
-    val editedMediaItemSequence = EditedMediaItemSequence(listOf(editedMediaItem))
-    val composition = Composition.Builder(editedMediaItemSequence)
-      .setHdrMode(toneMap)
-      .build()
-
-    val transformerOnListener = object : Transformer.Listener {
-      override fun onError(
-        composition: Composition,
-        exportResult: ExportResult,
-        exportException: ExportException
-      ) {
-
-        log("${exportException.errorCode} ${exportException.errorCodeName}")
-        // TranscodeErrorType.FailedTranscode.occurs(result, exportException.errorCodeName)
-        result.success(null)
+    try {
+      val inputUri = uriFromFilePath(path)
+      val outputPath = createOutputPath(path)
+      log("input: $path")
+      log("output: $outputPath")
+      deleteFile(outputPath)
+      var toneMap = hdrToneMap()
+      if (toneMapRequest != null) toneMap = toneMapRequest
+      if (toneMap == -1) {
+        TranscoderErrorType.NotSupportVersion.occurs(result)
+        return
       }
+      val editedMediaItem =
+        EditedMediaItem.Builder(MediaItem.fromUri(inputUri))
+          .setFlattenForSlowMotion(true).build()
+      val editedMediaItemSequence = EditedMediaItemSequence(listOf(editedMediaItem))
+      val composition = Composition.Builder(listOf(editedMediaItemSequence))
+        .setHdrMode(toneMap)
+        .build()
 
-      override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-        log("completed: $outputPath")
-        eventSink?.success(1.0)
-        result.success(outputPath)
-      }
-    }
+      val transformerOnListener = object : Transformer.Listener {
+        override fun onError(
+          composition: Composition,
+          exportResult: ExportResult,
+          exportException: ExportException
+        ) {
 
-    val transformer = Transformer.Builder(context)
-      .addListener(transformerOnListener)
-      .build()
-    transformer.start(composition, outputPath)
+          log("${exportException.errorCode} ${exportException.errorCodeName}")
+          // TranscodeErrorType.FailedTranscode.occurs(result, exportException.errorCodeName)
+          result.success(null)
+        }
 
-    var currentProgress = 0.0
-    eventSink?.success(0.0)
-    val progressHolder = ProgressHolder()
-    val handler = Handler(context.mainLooper)
-    handler.post(object : Runnable {
-      @OptIn(UnstableApi::class) override fun run() {
-        val state = transformer.getProgress(progressHolder)
-        if (state != PROGRESS_STATE_NOT_STARTED) {
-          val current = progressHolder.progress * 0.01
-          if (current != currentProgress
-          ) {
-            currentProgress = current
-            log("$currentProgress")
-            eventSink?.success(currentProgress)
-          }
-          handler.postDelayed(this, 100)
+        override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+          log("completed: $outputPath")
+          eventSink?.success(1.0)
+          result.success(outputPath)
         }
       }
-    })
+
+      val transformer = Transformer.Builder(context)
+        .addListener(transformerOnListener)
+        .build()
+      transformer.start(composition, outputPath)
+
+      var currentProgress = 0.0
+      eventSink?.success(0.0)
+      val progressHolder = ProgressHolder()
+      val handler = Handler(context.mainLooper)
+      handler.post(object : Runnable {
+        @OptIn(UnstableApi::class) override fun run() {
+          try {
+            val state = transformer.getProgress(progressHolder)
+            if (state != PROGRESS_STATE_NOT_STARTED) {
+              val current = progressHolder.progress * 0.01
+              if (current != currentProgress
+              ) {
+                currentProgress = current
+                log("$currentProgress")
+                eventSink?.success(currentProgress)
+              }
+              handler.postDelayed(this, 100)
+            }
+          } catch (e: Exception) {
+            log("Progress check error: ${e.message}")
+          }
+        }
+      })
+    } catch (e: Exception) {
+      log("Transcoding error: ${e.message}")
+      result.success(null)
+    } catch (e: NoSuchMethodError) {
+      log("API compatibility error: ${e.message}")
+      result.success(null)
+    } catch (e: NoClassDefFoundError) {
+      log("Class not found error: ${e.message}")
+      result.success(null)
+    }
   }
 
   @UnstableApi private fun hdrToneMap(): Int {
